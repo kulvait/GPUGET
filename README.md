@@ -41,7 +41,11 @@ GPU.py --redis-manage-all --force
 
 Now to get ID of the IDLE GPU run
 ```
-GPUID=$(GPU.py --get)
+GPU.py --get
+```
+as the program manages parent PID of the process, in Bash script the good way to get the GPU ID is to run
+```
+read GPUID < <(GPU.py --get)
 ```
 
 To release the GPU with given ID run
@@ -53,6 +57,7 @@ To release GPU IDs which were allocated by the processes with the PIDs, that no 
 ```
 GPU.py ---redis-purge
 ```
+This is potentially dangerous as e.g. when the `GPUID=$(GPU.py --get)` is called, the system stores PID of the subshell that no longer exist and `--redis-purge` might then return GPUID to the list of idle GPUs even if it is not idle. This is not a problem when the GPU is released by the same process that allocated it. Intended just as a soft solution of inconsistencies.
 
 For mor advanced use try
 ```
@@ -72,11 +77,6 @@ GPU.py --idle
 GPU.py --info
 ```
 
-# Donations
-
-If you find this software useful, you can support its development by means of small donation.
-
-[![Thank you](https://img.shields.io/badge/donate-$15-blue.svg)](https://kulvait.github.io/donate/?amount=15&currency=USD)
 
 # License
 
@@ -96,4 +96,8 @@ Copyright (C) 2024 Vojtěch Kulvait
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-See the [LICENSE](LICENSE) file for details.
+# Donations
+
+If you find this software useful, you can support its development by means of small donation.
+
+[![Thank you](https://img.shields.io/badge/donate-$15-blue.svg)](https://kulvait.github.io/donate/?amount=15&currency=USD)
