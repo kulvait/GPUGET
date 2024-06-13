@@ -1,82 +1,130 @@
-GPU management through REDIS brpop and lpush
-============================================
+System wide GPU resource management for CUDA and OpenCL computations
+====================================================================
 
 When running my programs in CUDA or OpenCL I often approach servers with multiple GPU cards. The problem is that the server has usually multiple users and I need to manage the GPU resources between users and also between my own programs. Imagine I run multiple tasks of e.g. CT reconstruction by means of [KCT_cbct](https://github.com/kulvait/KCT_cbct) on computer with multiple GPUs. I can have e.g. 150 tasks and want to distribute them over available GPUs in the way that at the same time at single GPU runs only one task.
 
-# The solution
+The `GPUGET` system provides a solution for system-wide notification about GPU resource availability and reservation. Importantly, this system can manage resources beyond just GPUs, relying on user compliance for reserving and releasing resources as needed.
 
-The solution is to use REDIS server to manage the GPU resources. The idea is to have a list of available idle GPUs and a list of GPUs which are managed. When a GPU is requested, the server pops the first available GPU and returns its ID. Then program can use the GPU with given ID in the same way, user can call `kct-krylov -p 0:$GPUID` to run the program on the GPU with given ID. When the GPU is released, the server pushes its ID back to the list of available GPUs.
+# Key Features
 
-This ways all the users must agree to use this solution to manage the GPU resources. The program must be modified to use the GPU with given ID. The program must also release the GPU when it is no longer needed. Program itself does not manage GPUs in the way of enforcing their actuall usage. It relies on the willinness of the users to use it.
+- **Resource Management**: Manages not only GPUs but can be extended to other resources.
 
-When there is no GPU available, the program waits for the GPU to be released. This is done by means of `brpop` command in REDIS. The program waits for the GPU to be released and then pops the GPU from the list of available GPUs.
+- **User Compliance**: The system itself does not enforce resource management but depends on users to reserve and release resources appropriately.
+
+- **Redis Integration**: Utilizes Redis server with `brpop` and `lpush` commands to manage resource lists. Creates system-wide database objects for resource management so that multiple users can share it.
+
+# How It Works
+
+The `GPUGET` uses a Redis server to maintain lists of available and managed GPUs. When a GPU is requested, the system pops the first available GPU ID from the list. When the GPU is released, its ID is pushed back into the list. This process relies on user programs being modified to use and release GPUs based on their IDs.
+
+## Example Usage
+
+Consider running multiple tasks, such as CT reconstructions using [KCT_cbct](https://github.com/kulvait/KCT_cbct), on a computer with multiple GPUs. To distribute tasks effectively, each GPU should run only one task at a time. `GPUGET` helps achieve this by managing GPU IDs through Redis.
+
+## User Responsibilities
+
+The system relies on users' willingness to follow the following management protocol.
+
+- **Modify Programs**: Ensure programs are adapted to use GPUs with specific IDs.
+- **Request GPUs**: Programs must request GPUs before they can use them. This is achieved by potentially blocking call `GPUGET --get`.
+- **Release GPUs**: Programs must release GPUs when they are no longer needed. This is done by calling `GPUGET --release $GPUID`.
 
 # Prerequisites
 
-This implementation in python requires the following packages to be present in your system.
+To use `GPUGET`, you need the following.
+
+
+## Python packages
 ```
 pip install redis
 pip install argparse
 pip install pycuda
 ```
-Moreover it requires running instance of REDIS server. In Debian you can install it by means of
+
+## Redis server
+
+Install Redis server on Debian-based systems
 ```
 sudo apt-get install redis-server
 ```
 
 # Usage
 
-First start the REDIS server.
+## Installation
 
-Put the `GPU.py` into your path.
+- Clone the repository and put the `GPU.py` into your path.
+- Start the Redis server.
 
-To initialize all the objects in REDIS server run
+### Initialization
+
+Initialize objects in Redis database by running
 ```
 GPU.py --redis-manage-all
 ```
-When something is broken and you wish to reset objects run just
+
+To reset objects when something is broken run
 ```
 GPU.py --redis-manage-all --force
 ```
 
-Now to get ID of the IDLE GPU run
+## Get and Release GPU ID
+
+To get the ID of an IDLE GPU
 ```
 GPU.py --get
 ```
-as the program manages parent PID of the process, in Bash script the good way to get the GPU ID is to run
+In Bash script obtain the GPU ID by calling
 ```
 read GPUID < <(GPU.py --get)
 ```
 
-To release the GPU with given ID run
+To release the GPU with given ID
 ```
 GPU.py --release $GPUID
 ```
 
-To release GPU IDs which were allocated by the processes with the PIDs, that no longer exist run
+## Manage inconsistencies
+
+To release GPU IDs which were allocated by the processes that no longer exist:
 ```
 GPU.py ---redis-purge
 ```
-This is potentially dangerous as e.g. when the `GPUID=$(GPU.py --get)` is called, the system stores PID of the subshell that no longer exist and `--redis-purge` might then return GPUID to the list of idle GPUs even if it is not idle. This is not a problem when the GPU is released by the same process that allocated it. Intended just as a soft solution of inconsistencies.
+**Warning**: This command is intended to be used when the system is in inconsistent state. It releases all GPU IDs that were allocated by processes that no longer exist. It is not recommended to use it in normal operation as it might release GPU IDs that are still in use in case that the process that allocated them is not running anymore.
 
-For mor advanced use try
+To completly reinitialize all objects and clear the logs
+```
+GPU.py --redis-manage-all --force
+```
+
+To remove all the objects from the Redis database
+```
+GPU.py --delete
+```
+
+## Advanced Usage
+
+To list all available options run
 ```
 GPU.py --help
 ```
 or consult the source code.
 
-To get overview of the allocations run
+## Log and Status
+
+To get the overview of GPU allocations
 ```
 GPU.py --log
 ```
 
-To list managed GPUs and IDLE GPUs run
+To list currently idle GPUs
 ```
-GPU.py --managed
 GPU.py --idle
-GPU.py --info
 ```
 
+To list currently active GPUs
+```
+GPU.py --active
+```
 
 # License
 
@@ -98,6 +146,6 @@ Copyright (C) 2024 Vojtěch Kulvait
 
 # Donations
 
-If you find this software useful, you can support its development by means of small donation.
+If you find this software useful, you can support its development through a donation.
 
 [![Thank you](https://img.shields.io/badge/donate-$15-blue.svg)](https://kulvait.github.io/donate/?amount=15&currency=USD)

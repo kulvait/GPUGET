@@ -32,9 +32,10 @@ parser.add_argument("--get", action="store_true", help="Get GPU ID that is not i
 parser.add_argument("--release", default=None, type=int, help="Release GPU ID after it is no longer in use")
 
 parser.add_argument("--log", action="store_true", help="Print log.")
-parser.add_argument("--idle", action="store_true", help="Print IDDLE GPUs.")
-parser.add_argument("--managed", action="store_true", help="Print Managed GPUs.")
-parser.add_argument("--info", action="store_true", help="Print Managed GPUs.")
+parser.add_argument("--info", action="store_true", help="Print GPUs summary.")
+parser.add_argument("--idle", action="store_true", help="Print idle GPUs.")
+parser.add_argument("--managed", action="store_true", help="Print managed GPUs.")
+parser.add_argument("--active", action="store_true", help="Print active GPUs.")
 parser.add_argument("--redis-delete", action="store_true", help="Delete all Redis objects related to GPU management.")
 parser.add_argument("--redis-purge", action="store_true", help="Remove allocations by non existent processes.")
 ARG = parser.parse_args()
@@ -196,8 +197,34 @@ if ARG.redis_purge:
 	for i in managedlist:
 		PID = rs.hget("%s_GPU%d"%(ARG.redis_prefix, int(i)), "PID")
 		if PID is not None:
-			if not checkPID(int(PID)):
+			PID = int(PID.decode())
+			if not checkPID(PID):
 				rs.delete("%s_GPU%d"%(ARG.redis_prefix, int(i)))
-				LOG = "%s: GPU %s acquired by PID %d, was released by redis_purge as the process with given PID does not exist.."%(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), i, PID)
+				LOG = "%s: GPU %s acquired by process with PID %d, was released by redis purge as the process with given PID does no longer exist."%(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), i, PID)
 				rs.lpush("%s_EVENTS"%(ARG.redis_prefix), LOG)
 				rs.lpush("%s_IDLE"%(ARG.redis_prefix), i)
+	exit()
+
+if ARG.active:
+	managed = rs.lrange("%s_MANAGED"%(ARG.redis_prefix), 0, -1)
+	managedlist = [int(i.decode()) for i in managed]
+	managedlist.sort()
+	active = []
+	idle = rs.lrange("%s_IDLE"%(ARG.redis_prefix), 0, -1)
+	idlelist = [int(i.decode()) for i in idle]
+	for i in managedlist:
+		if i not in idlelist:
+			active.append(i)
+	active.sort()
+	if len(active) == 0:
+		print("There are no active GPUs.")
+	else:
+		print("There is %d ACTIVE GPUs, IDs: %s"%(len(active), ",".join([str(i) for i in active])))
+	for i in active:
+		PID = rs.hget("%s_GPU%d"%(ARG.redis_prefix, int(i)), "PID")
+		TIME = rs.hget("%s_GPU%d"%(ARG.redis_prefix, int(i)), "TIME")
+		if TIME is not None and PID is not None:
+			print("GPU %d acquired by PID %d at %s"%(i, int(PID.decode()), TIME.decode()))
+		else:
+			print("GPU %d acquired by unknown process."%(i))
+	exit()
