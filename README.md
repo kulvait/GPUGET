@@ -1,7 +1,7 @@
 System wide GPU resource management for CUDA and OpenCL computations
 ====================================================================
 
-When running my programs in CUDA or OpenCL I often approach servers with multiple GPU cards. The problem is that the server has usually multiple users and I need to manage the GPU resources between users and also between my own programs. Imagine I run multiple tasks of e.g. CT reconstruction by means of [KCT_cbct](https://github.com/kulvait/KCT_cbct) on computer with multiple GPUs. I can have e.g. 150 tasks and want to distribute them over available GPUs in the way that at the same time at single GPU runs only one task.
+Managing GPU resources on servers with multiple GPU cards can be challenging, especially when these cards are intended to run CUDA or OpenCL computational tasks. Typically, each process can utilize only a single GPU card at a time. Often, only the first card is utilized while others remain idle, leading to inefficient resource use. Additionally, negotiating GPU usage among multiple users and indicating the intention to use or wait for a GPU can be problematic.
 
 The `GPUGET` system provides a solution for system-wide notification about GPU resource availability and reservation. Importantly, this system can manage resources beyond just GPUs, relying on user compliance for reserving and releasing resources as needed.
 
@@ -17,9 +17,6 @@ The `GPUGET` system provides a solution for system-wide notification about GPU r
 
 The `GPUGET` uses a Redis server to maintain lists of available and managed GPUs. When a GPU is requested, the system pops the first available GPU ID from the list. When the GPU is released, its ID is pushed back into the list. This process relies on user programs being modified to use and release GPUs based on their IDs.
 
-## Example Usage
-
-Consider running multiple tasks, such as CT reconstructions using [KCT_cbct](https://github.com/kulvait/KCT_cbct), on a computer with multiple GPUs. To distribute tasks effectively, each GPU should run only one task at a time. `GPUGET` helps achieve this by managing GPU IDs through Redis.
 
 ## User Responsibilities
 
@@ -125,6 +122,24 @@ To list currently active GPUs
 ```
 GPU.py --active
 ```
+
+# Example Usage
+
+Consider running multiple tasks, such as CT reconstructions using [KCT_cbct](https://github.com/kulvait/KCT_cbct), on a computer with multiple GPUs. To distribute tasks effectively, each GPU should run only one task at a time. `GPUGET` helps achieve this by managing GPU IDs through Redis. The program `kct-krylov` has `-p $PLATFORMID:$GPUID` option to specify the GPU ID. The following Bash script demonstrates how to use `GPUGET` to manage GPU IDs.
+
+```bash
+#!/bin/bash
+local INPUTPROJ=$1
+local GEOMETRY=$2
+local OUTPUTVOL=$3
+PLATFORMID=0
+read DEV < <(GPU.py --get)
+kct-pb2d-krylov --force --cvp --cgls --barrier --relaxed -p $PLATFORMID:$DEV $INPUTPROJ $GEOMETRY $OUTPUTVOL
+GPU.py --release $DEV
+
+```
+
+You can then call multiple instances of this script to run multiple tasks on multiple GPUs. The `GPUGET` system ensures that each GPU is used only once at a time.
 
 # License
 
